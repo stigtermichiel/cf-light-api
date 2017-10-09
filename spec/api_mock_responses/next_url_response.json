@@ -1,0 +1,16 @@
+{
+  "total_results": 10,
+  "total_pages": 1,
+  "prev_url": null,
+  "next_url": null,
+  "resources": [
+    {
+      "metadata": {
+        "guid": "app-guid2"
+      },
+      "entity": {
+        "name": "app2"
+      }
+    }
+  ]
+}

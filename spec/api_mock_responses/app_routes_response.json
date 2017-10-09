@@ -1,0 +1,28 @@
+{
+  "total_results": 69,
+  "total_pages": 1,
+  "prev_url": null,
+  "next_url": null,
+  "resources": [
+    {
+      "metadata": {
+        "guid": "a3ae744d-97ba-4939-a2a1-8f195f284a8f",
+        "url": "/v2/routes/a3ae744d-97ba-4939-a2a1-8f195f284a8f",
+        "created_at": "2016-08-18T13:43:44Z",
+        "updated_at": null
+      },
+      "entity": {
+        "host": "de-netmon-es",
+        "path": "",
+        "domain_guid": "domain_guid",
+        "space_guid": "b113f179-7952-46c6-bf52-65dd3a480d1a",
+        "service_instance_guid": null,
+        "port": null,
+        "domain_url": "/v2/shared_domains/1b245fdd-8199-47cb-8416-222e214ca559",
+        "space_url": "/v2/spaces/b113f179-7952-46c6-bf52-65dd3a480d1a",
+        "apps_url": "/v2/routes/a3ae744d-97ba-4939-a2a1-8f195f284a8f/apps",
+        "route_mappings_url": "/v2/routes/a3ae744d-97ba-4939-a2a1-8f195f284a8f/route_mappings"
+      }
+    }
+  ]
+}
