@@ -55,7 +55,7 @@ class CFLightAPIWorker
     end
 
     @scheduler.every update_interval, :first_in => '5s', :overlap => false, :timeout => update_timeout do
-      # update_cf_data
+      update_cf_data
     end
 
   end
@@ -70,7 +70,7 @@ class CFLightAPIWorker
     @logger.info "Making #{method} request for #{path}..."
 
     resources = []
-    response = jsonResponse(path, method)
+    response = json_response(path, method)
 
     # Some endpoints return a 'resources' array, others are flat, depending on the path.
     if response['resources']
@@ -85,7 +85,7 @@ class CFLightAPIWorker
     resources.flatten
   end
 
-  def jsonResponse(path, method='GET')
+  def json_response(path, method='GET')
     JSON.parse(@cf_client.base.rest_client.request(method, path)[1][:body])
   end
 
@@ -269,5 +269,3 @@ class CFLightAPIWorker
   end
 
 end
-
-# CFLightAPIWorker.new
