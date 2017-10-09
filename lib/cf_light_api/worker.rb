@@ -13,7 +13,7 @@ class CFLightAPIWorker
     include NewRelic::Agent::MethodTracer
   end
 
-  def initialize
+  def initialize()
     @logger = Logger.new(STDOUT)
     @logger.formatter = proc do |severity, datetime, progname, msg|
        "#{datetime} [cf_light_api:worker]: #{msg}\n"
@@ -152,7 +152,7 @@ class CFLightAPIWorker
 
           @logger.info "Updating data..."
 
-          @cf_client = get_client() # Ensure we have a fresh auth token...
+          @cf_client = get_client # Ensure we have a fresh auth token...
 
           @apps      = cf_rest('/v2/apps?results-per-page=100')
           @orgs      = cf_rest('/v2/organizations?results-per-page=100')
@@ -264,4 +264,4 @@ class CFLightAPIWorker
 
 end
 
-CFLightAPIWorker.new
+# CFLightAPIWorker.new

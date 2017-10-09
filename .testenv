@@ -1,0 +1,5 @@
+export REDIS_URI: redis://127.0.0.1:6379/
+export REDIS_KEY_PREFIX: cf_light_api_live
+export CF_API: https://api.cf.yourdomain.com
+export CF_USER: username
+export CF_PASSWORD: password

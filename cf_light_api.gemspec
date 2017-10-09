@@ -21,5 +21,8 @@ Gem::Specification.new 'cf_light_api', '2.4.0' do |s|
 
 
   s.add_development_dependency 'rspec', '~> 3.6.0'
+  s.add_development_dependency 'dotenv', '~> 2.2'
+  s.add_development_dependency 'mock_redis', '~> 0.17.3'
+
 
 end
