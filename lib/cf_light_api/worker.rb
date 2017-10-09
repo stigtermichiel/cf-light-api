@@ -5,6 +5,7 @@ require 'redlock'
 require 'logger'
 require 'graphite-api'
 require 'date'
+require 'redis'
 
 class CFLightAPIWorker
   if ENV['NEW_RELIC_LICENSE_KEY']
@@ -16,7 +17,7 @@ class CFLightAPIWorker
   def initialize()
     @logger = Logger.new(STDOUT)
     @logger.formatter = proc do |severity, datetime, progname, msg|
-       "#{datetime} [cf_light_api:worker]: #{msg}\n"
+      "#{datetime} [cf_light_api:worker]: #{msg}\n"
     end
 
     ['CF_API', 'CF_USER', 'CF_PASSWORD'].each do |env|
@@ -38,10 +39,11 @@ class CFLightAPIWorker
     end
 
     update_interval = (ENV['UPDATE_INTERVAL'] || '5m').to_s # If you change the default '5m' here, also remember to change the default age validity in sinatra/cf_light_api.rb:31
-    update_timeout  = (ENV['UPDATE_TIMEOUT']  || '5m').to_s
+    update_timeout = (ENV['UPDATE_TIMEOUT'] || '5m').to_s
 
-    @lock_manager = Redlock::Client.new([ENV['REDIS_URI']])
-    @scheduler    = Rufus::Scheduler.new
+    @scheduler = Rufus::Scheduler.new
+    @redis = Redis.new(:uri => ENV['REDIS_URI'])
+    @lock_manager = Redlock::Client.new([@redis])
 
     @logger.info "Update interval: '#{@update_interval}'"
     @logger.info "Update timeout:  '#{@update_timeout}'"
@@ -53,7 +55,7 @@ class CFLightAPIWorker
     end
 
     @scheduler.every update_interval, :first_in => '5s', :overlap => false, :timeout => update_timeout do
-      update_cf_data
+      # update_cf_data
     end
 
   end
@@ -61,14 +63,14 @@ class CFLightAPIWorker
   def formatted_instance_stats_for_app app
     instances = cf_rest("/v2/apps/#{app['metadata']['guid']}/stats")[0]
     raise "Unable to retrieve app instance stats: '#{instances['error_code']}'" if instances['error_code']
-    instances.map{|key,value|value}
+    instances.map {|key, value| value}
   end
 
   def cf_rest(path, method='GET')
     @logger.info "Making #{method} request for #{path}..."
 
     resources = []
-    response = JSON.parse(@cf_client.base.rest_client.request(method, path)[1][:body])
+    response = jsonResponse(path, method)
 
     # Some endpoints return a 'resources' array, others are flat, depending on the path.
     if response['resources']
@@ -81,6 +83,10 @@ class CFLightAPIWorker
     # at which point all the resources are returned up the stack and flattened.
     resources << cf_rest(response['next_url'], method) unless response['next_url'] == nil
     resources.flatten
+  end
+
+  def jsonResponse(path, method='GET')
+    JSON.parse(@cf_client.base.rest_client.request(method, path)[1][:body])
   end
 
   def get_client(cf_api=ENV['CF_API'], cf_user=ENV['CF_USER'], cf_password=ENV['CF_PASSWORD'])
@@ -118,23 +124,23 @@ class CFLightAPIWorker
   end
 
   def put_in_redis(key, data)
-    REDIS.set key, data.to_json
+    @redis.set key, data.to_json
   end
 
   def format_duration(elapsed_seconds)
     seconds = elapsed_seconds % 60
     minutes = (elapsed_seconds / 60) % 60
-    hours   = elapsed_seconds / (60 * 60)
+    hours = elapsed_seconds / (60 * 60)
     format("%02d hrs, %02d mins, %02d secs", hours, minutes, seconds)
   end
 
   def format_routes_for_app app
     routes = cf_rest app['entity']['routes_url']
     routes.collect do |route|
-      host   = route['entity']['host']
-      path   = route['entity']['path']
+      host = route['entity']['host']
+      path = route['entity']['path']
 
-      domain = @domains.find{|a_domain| a_domain['metadata']['guid'] == route['entity']['domain_guid']}
+      domain = @domains.find {|a_domain| a_domain['metadata']['guid'] == route['entity']['domain_guid']}
       domain = domain['entity']['name']
 
       "#{host}.#{domain}#{path}"
@@ -143,114 +149,114 @@ class CFLightAPIWorker
 
   def update_cf_data
     @cf_client = nil
-    @graphite  = GraphiteAPI.new(graphite: "#{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}") if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT'] and ENV['CF_ENV_NAME']
+    @graphite = GraphiteAPI.new(graphite: "#{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}") if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT'] and ENV['CF_ENV_NAME']
 
     begin
-      @lock_manager.lock("#{ENV['REDIS_KEY_PREFIX']}:lock", 5*60*1000) do |lock|
-        if lock
-          start_time = Time.now
+      lock = @lock_manager.lock("#{ENV['REDIS_KEY_PREFIX']}:lock", 5*60*1000)
+      if lock
+        start_time = Time.now
 
-          @logger.info "Updating data..."
+        @logger.info "Updating data..."
 
-          @cf_client = get_client # Ensure we have a fresh auth token...
+        @cf_client = get_client # Ensure we have a fresh auth token...
 
-          @apps      = cf_rest('/v2/apps?results-per-page=100')
-          @orgs      = cf_rest('/v2/organizations?results-per-page=100')
-          @quotas    = cf_rest('/v2/quota_definitions?results-per-page=100')
-          @spaces    = cf_rest('/v2/spaces?results-per-page=100')
-          @stacks    = cf_rest('/v2/stacks?results-per-page=100')
-          @domains   = cf_rest('/v2/domains?results-per-page=100')
+        @apps = cf_rest('/v2/apps?results-per-page=100')
+        @orgs = cf_rest('/v2/organizations?results-per-page=100')
+        @quotas = cf_rest('/v2/quota_definitions?results-per-page=100')
+        @spaces = cf_rest('/v2/spaces?results-per-page=100')
+        @stacks = cf_rest('/v2/stacks?results-per-page=100')
+        @domains = cf_rest('/v2/domains?results-per-page=100')
 
-          formatted_orgs = @orgs.map do |org|
-            quota = @quotas.find{|a_quota| a_quota['metadata']['guid'] == org['entity']['quota_definition_guid']}
+        formatted_orgs = @orgs.map do |org|
+          quota = @quotas.find {|a_quota| a_quota['metadata']['guid'] == org['entity']['quota_definition_guid']}
 
-            quota = {
+          quota = {
               :total_services => quota['entity']['total_services'],
-              :total_routes   => quota['entity']['total_routes'],
-              :memory_limit   => quota['entity']['memory_limit'] * 1024 * 1024
-            }
+              :total_routes => quota['entity']['total_routes'],
+              :memory_limit => quota['entity']['memory_limit'] * 1024 * 1024
+          }
 
-            send_org_quota_data_to_graphite(org['entity']['name'], quota) if @graphite
+          send_org_quota_data_to_graphite(org['entity']['name'], quota) if @graphite
 
-            {
+          {
               :guid => org['metadata']['guid'],
-              :name  => org['entity']['name'],
+              :name => org['entity']['name'],
               :quota => quota
-            }
-          end
+          }
+        end
 
-          formatted_apps = @apps.map do |app|
-            # TODO: This is a bit repetative, could maybe improve?
-            space  = @spaces.find{|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
-            org    = @orgs.find{|an_org|     an_org['metadata']['guid'] == space['entity']['organization_guid']}
-            stack  = @stacks.find{|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
-            routes = format_routes_for_app(app)
+        formatted_apps = @apps.map do |app|
+          # TODO: This is a bit repetative, could maybe improve?
+          space = @spaces.find {|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
+          org = @orgs.find {|an_org| an_org['metadata']['guid'] == space['entity']['organization_guid']}
+          stack = @stacks.find {|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
+          routes = format_routes_for_app(app)
 
-            running = (app['entity']['state'] == "STARTED")
+          running = (app['entity']['state'] == "STARTED")
 
-            base_data = {
-              :buildpack     => app['entity']['buildpack'],
-              :data_from     => Time.now.to_i,
-              :diego         => app['entity']['diego'],
-              :docker        => app['entity']['docker_image'] ? true : false,
-              :docker_image  => app['entity']['docker_image'],
-              :guid          => app['metadata']['guid'],
+          base_data = {
+              :buildpack => app['entity']['buildpack'],
+              :data_from => Time.now.to_i,
+              :diego => app['entity']['diego'],
+              :docker => app['entity']['docker_image'] ? true : false,
+              :docker_image => app['entity']['docker_image'],
+              :guid => app['metadata']['guid'],
               :last_uploaded => app['metadata']['updated_at'] ? DateTime.parse(app['metadata']['updated_at']).strftime('%Y-%m-%d %T %z') : nil,
-              :name          => app['entity']['name'],
-              :org           => org['entity']['name'],
-              :routes        => routes,
-              :space         => space['entity']['name'],
-              :stack         => stack['entity']['name'],
-              :state         => app['entity']['state']
-            }
+              :name => app['entity']['name'],
+              :org => org['entity']['name'],
+              :routes => routes,
+              :space => space['entity']['name'],
+              :stack => stack['entity']['name'],
+              :state => app['entity']['state']
+          }
 
-            # Add additional data, such as instance usage statistics - but this is only possible if the instances are running.
-            additional_data = {}
+          # Add additional data, such as instance usage statistics - but this is only possible if the instances are running.
+          additional_data = {}
 
-            begin
-              instance_stats = []
-              if running
-                instance_stats = formatted_instance_stats_for_app(app)
-                running_instances = instance_stats.select{|instance| instance['stats']['uris'] if instance['state'] == 'RUNNING'}
-                raise "There are no running instances of this app." if running_instances.empty?
+          begin
+            instance_stats = []
+            if running
+              instance_stats = formatted_instance_stats_for_app(app)
+              running_instances = instance_stats.select {|instance| instance['stats']['uris'] if instance['state'] == 'RUNNING'}
+              raise "There are no running instances of this app." if running_instances.empty?
 
-                if @graphite
-                  send_instance_usage_data_to_graphite(instance_stats, org['entity']['name'], space['entity']['name'], app['entity']['name'])
-                end
+              if @graphite
+                send_instance_usage_data_to_graphite(instance_stats, org['entity']['name'], space['entity']['name'], app['entity']['name'])
               end
-
-              additional_data = {
-               :running   => running,
-               :instances => instance_stats,
-               :error     => nil
-              }
-
-            rescue => e
-              # Most exceptions here will be caused by the app or one of the instances being in a non-standard state,
-              # for example, trying to query an app which was present when the worker began updating, but was stopped
-              # before we reached this section, so we just catch all exceptions, log the reason and move on.
-              @logger.info "  #{org['entity']['name']} #{space['entity']['name']}: '#{app['entity']['name']}' error: #{e.message}"
-              additional_data = {
-                :running   => 'error',
-                :instances => [],
-                :error     => e.message
-              }
             end
 
-            base_data.merge additional_data
+            additional_data = {
+                :running => running,
+                :instances => instance_stats,
+                :error => nil
+            }
+
+          rescue => e
+            # Most exceptions here will be caused by the app or one of the instances being in a non-standard state,
+            # for example, trying to query an app which was present when the worker began updating, but was stopped
+            # before we reached this section, so we just catch all exceptions, log the reason and move on.
+            @logger.info "  #{org['entity']['name']} #{space['entity']['name']}: '#{app['entity']['name']}' error: #{e.message}"
+            additional_data = {
+                :running => 'error',
+                :instances => [],
+                :error => e.message
+            }
           end
 
-          put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", formatted_orgs
-          put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", formatted_apps
-          put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
-
-          @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
-          @lock_manager.unlock(lock)
-          @cf_client.logout
-        else
-          @logger.info "Update already running in another instance!"
+          base_data.merge additional_data
         end
+
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", formatted_orgs
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", formatted_apps
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
+
+        @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
+        @lock_manager.unlock(lock)
+        @cf_client.logout
+      else
+        @logger.info "Update already running in another instance!"
       end
+
     rescue Rufus::Scheduler::TimeoutError
       @logger.info 'Data update took too long and was aborted, waiting for the lock to expire before trying again...'
       @cf_client.logout
