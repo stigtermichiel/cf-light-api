@@ -134,13 +134,13 @@ class CFLightAPIWorker
     format("%02d hrs, %02d mins, %02d secs", hours, minutes, seconds)
   end
 
-  def format_routes_for_app app
+  def format_routes_for_app(app, domains)
     routes = cf_rest app['entity']['routes_url']
     routes.collect do |route|
       host = route['entity']['host']
       path = route['entity']['path']
 
-      domain = @domains.find {|a_domain| a_domain['metadata']['guid'] == route['entity']['domain_guid']}
+      domain = domains.find {|a_domain| a_domain['metadata']['guid'] == route['entity']['domain_guid']}
       domain = domain['entity']['name']
 
       "#{host}.#{domain}#{path}"
@@ -157,97 +157,17 @@ class CFLightAPIWorker
         start_time = Time.now
 
         @logger.info "Updating data..."
-
         @cf_client = get_client # Ensure we have a fresh auth token...
 
-        @apps = cf_rest('/v2/apps?results-per-page=100')
-        @orgs = cf_rest('/v2/organizations?results-per-page=100')
-        @quotas = cf_rest('/v2/quota_definitions?results-per-page=100')
-        @spaces = cf_rest('/v2/spaces?results-per-page=100')
-        @stacks = cf_rest('/v2/stacks?results-per-page=100')
-        @domains = cf_rest('/v2/domains?results-per-page=100')
+        apps = cf_rest('/v2/apps?results-per-page=100')
+        orgs = cf_rest('/v2/organizations?results-per-page=100')
+        quotas = cf_rest('/v2/quota_definitions?results-per-page=100')
+        spaces = cf_rest('/v2/spaces?results-per-page=100')
+        stacks = cf_rest('/v2/stacks?results-per-page=100')
+        domains = cf_rest('/v2/domains?results-per-page=100')
 
-        formatted_orgs = @orgs.map do |org|
-          quota = @quotas.find {|a_quota| a_quota['metadata']['guid'] == org['entity']['quota_definition_guid']}
-
-          quota = {
-              :total_services => quota['entity']['total_services'],
-              :total_routes => quota['entity']['total_routes'],
-              :memory_limit => quota['entity']['memory_limit'] * 1024 * 1024
-          }
-
-          send_org_quota_data_to_graphite(org['entity']['name'], quota) if @graphite
-
-          {
-              :guid => org['metadata']['guid'],
-              :name => org['entity']['name'],
-              :quota => quota
-          }
-        end
-
-        formatted_apps = @apps.map do |app|
-          # TODO: This is a bit repetative, could maybe improve?
-          space = @spaces.find {|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
-          org = @orgs.find {|an_org| an_org['metadata']['guid'] == space['entity']['organization_guid']}
-          stack = @stacks.find {|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
-          routes = format_routes_for_app(app)
-
-          running = (app['entity']['state'] == "STARTED")
-
-          base_data = {
-              :buildpack => app['entity']['buildpack'],
-              :data_from => Time.now.to_i,
-              :diego => app['entity']['diego'],
-              :docker => app['entity']['docker_image'] ? true : false,
-              :docker_image => app['entity']['docker_image'],
-              :guid => app['metadata']['guid'],
-              :last_uploaded => app['metadata']['updated_at'] ? DateTime.parse(app['metadata']['updated_at']).strftime('%Y-%m-%d %T %z') : nil,
-              :name => app['entity']['name'],
-              :org => org['entity']['name'],
-              :routes => routes,
-              :space => space['entity']['name'],
-              :stack => stack['entity']['name'],
-              :state => app['entity']['state']
-          }
-
-          # Add additional data, such as instance usage statistics - but this is only possible if the instances are running.
-          additional_data = {}
-
-          begin
-            instance_stats = []
-            if running
-              instance_stats = formatted_instance_stats_for_app(app)
-              running_instances = instance_stats.select {|instance| instance['stats']['uris'] if instance['state'] == 'RUNNING'}
-              raise "There are no running instances of this app." if running_instances.empty?
-
-              if @graphite
-                send_instance_usage_data_to_graphite(instance_stats, org['entity']['name'], space['entity']['name'], app['entity']['name'])
-              end
-            end
-
-            additional_data = {
-                :running => running,
-                :instances => instance_stats,
-                :error => nil
-            }
-
-          rescue => e
-            # Most exceptions here will be caused by the app or one of the instances being in a non-standard state,
-            # for example, trying to query an app which was present when the worker began updating, but was stopped
-            # before we reached this section, so we just catch all exceptions, log the reason and move on.
-            @logger.info "  #{org['entity']['name']} #{space['entity']['name']}: '#{app['entity']['name']}' error: #{e.message}"
-            additional_data = {
-                :running => 'error',
-                :instances => [],
-                :error => e.message
-            }
-          end
-
-          base_data.merge additional_data
-        end
-
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", formatted_orgs
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", formatted_apps
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", format_orgs(orgs, quotas)
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains)
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
 
         @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
@@ -262,6 +182,90 @@ class CFLightAPIWorker
       @cf_client.logout
     end
   end
+
+  def format_apps(apps, spaces, orgs, stacks, domains)
+    apps.map do |app|
+      # TODO: This is a bit repetative, could maybe improve?
+      space = spaces.find {|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
+      org = orgs.find {|an_org| an_org['metadata']['guid'] == space['entity']['organization_guid']}
+      stack = stacks.find {|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
+      routes = format_routes_for_app(app, domains)
+
+      running = (app['entity']['state'] == "STARTED")
+
+      base_data = {
+          :buildpack => app['entity']['buildpack'],
+          :data_from => Time.now.to_i,
+          :diego => app['entity']['diego'],
+          :docker => app['entity']['docker_image'] ? true : false,
+          :docker_image => app['entity']['docker_image'],
+          :guid => app['metadata']['guid'],
+          :last_uploaded => app['metadata']['updated_at'] ? DateTime.parse(app['metadata']['updated_at']).strftime('%Y-%m-%d %T %z') : nil,
+          :name => app['entity']['name'],
+          :org => org['entity']['name'],
+          :routes => routes,
+          :space => space['entity']['name'],
+          :stack => stack['entity']['name'],
+          :state => app['entity']['state']
+      }
+
+      # Add additional data, such as instance usage statistics - but this is only possible if the instances are running.
+      additional_data = {}
+
+      begin
+        instance_stats = []
+        if running
+          instance_stats = formatted_instance_stats_for_app(app)
+          running_instances = instance_stats.select {|instance| instance['stats']['uris'] if instance['state'] == 'RUNNING'}
+          raise "There are no running instances of this app." if running_instances.empty?
+
+          if @graphite
+            send_instance_usage_data_to_graphite(instance_stats, org['entity']['name'], space['entity']['name'], app['entity']['name'])
+          end
+        end
+
+        additional_data = {
+            :running => running,
+            :instances => instance_stats,
+            :error => nil
+        }
+
+      rescue => e
+        # Most exceptions here will be caused by the app or one of the instances being in a non-standard state,
+        # for example, trying to query an app which was present when the worker began updating, but was stopped
+        # before we reached this section, so we just catch all exceptions, log the reason and move on.
+        @logger.info "  #{org['entity']['name']} #{space['entity']['name']}: '#{app['entity']['name']}' error: #{e.message}"
+        additional_data = {
+            :running => 'error',
+            :instances => [],
+            :error => e.message
+        }
+      end
+
+      base_data.merge additional_data
+    end
+  end
+
+  def format_orgs(orgs, quotas)
+    orgs.map do |org|
+      quota = quotas.find {|a_quota| a_quota['metadata']['guid'] == org['entity']['quota_definition_guid']}
+
+      quota = {
+          :total_services => quota['entity']['total_services'],
+          :total_routes => quota['entity']['total_routes'],
+          :memory_limit => quota['entity']['memory_limit'] * 1024 * 1024
+      }
+
+      send_org_quota_data_to_graphite(org['entity']['name'], quota) if @graphite
+
+      {
+          :guid => org['metadata']['guid'],
+          :name => org['entity']['name'],
+          :quota => quota
+      }
+    end
+  end
+
 
   if ENV['NEW_RELIC_LICENSE_KEY']
     add_transaction_tracer :update_cf_data, category: :task
