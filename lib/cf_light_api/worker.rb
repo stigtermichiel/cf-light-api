@@ -24,6 +24,42 @@ class CFLightAPIWorker
 
     @redis = redis
     @lock_manager = Redlock::Client.new([@redis])
+    @graphite = GraphiteAPI.new(graphite: "#{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}") if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT'] and ENV['CF_ENV_NAME']
+  end
+
+  def update_cf_data
+    @cf_client = nil
+
+    begin
+      lock = @lock_manager.lock("#{ENV['REDIS_KEY_PREFIX']}:lock", 5*60*1000)
+      if lock
+        start_time = Time.now
+
+        @logger.info "Updating data..."
+        @cf_client = get_client # Ensure we have a fresh auth token...
+
+        apps = cf_rest('/v2/apps?results-per-page=100')
+        orgs = cf_rest('/v2/organizations?results-per-page=100')
+        quotas = cf_rest('/v2/quota_definitions?results-per-page=100')
+        spaces = cf_rest('/v2/spaces?results-per-page=100')
+        stacks = cf_rest('/v2/stacks?results-per-page=100')
+        domains = cf_rest('/v2/domains?results-per-page=100')
+
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", format_orgs(orgs, quotas)
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains)
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
+
+        @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
+        @lock_manager.unlock(lock)
+        @cf_client.logout
+      else
+        @logger.info "Update already running in another instance!"
+      end
+
+    rescue Rufus::Scheduler::TimeoutError
+      @logger.info 'Data update took too long and was aborted, waiting for the lock to expire before trying again...'
+      @cf_client.logout
+    end
   end
 
   def formatted_instance_stats_for_app app
@@ -113,41 +149,6 @@ class CFLightAPIWorker
     end
   end
 
-  def update_cf_data
-    @cf_client = nil
-    @graphite = GraphiteAPI.new(graphite: "#{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}") if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT'] and ENV['CF_ENV_NAME']
-
-    begin
-      lock = @lock_manager.lock("#{ENV['REDIS_KEY_PREFIX']}:lock", 5*60*1000)
-      if lock
-        start_time = Time.now
-
-        @logger.info "Updating data..."
-        @cf_client = get_client # Ensure we have a fresh auth token...
-
-        apps = cf_rest('/v2/apps?results-per-page=100')
-        orgs = cf_rest('/v2/organizations?results-per-page=100')
-        quotas = cf_rest('/v2/quota_definitions?results-per-page=100')
-        spaces = cf_rest('/v2/spaces?results-per-page=100')
-        stacks = cf_rest('/v2/stacks?results-per-page=100')
-        domains = cf_rest('/v2/domains?results-per-page=100')
-
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", format_orgs(orgs, quotas)
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains)
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
-
-        @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
-        @lock_manager.unlock(lock)
-        @cf_client.logout
-      else
-        @logger.info "Update already running in another instance!"
-      end
-
-    rescue Rufus::Scheduler::TimeoutError
-      @logger.info 'Data update took too long and was aborted, waiting for the lock to expire before trying again...'
-      @cf_client.logout
-    end
-  end
 
   def format_apps(apps, spaces, orgs, stacks, domains)
     apps.map do |app|
