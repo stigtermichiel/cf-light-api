@@ -16,10 +16,9 @@ describe CFLightAPIWorker do
 
   before do
     @fake_redis_server = MockRedis.new
-    allow(Redis).to receive(:new).and_return(@fake_redis_server)
     time_mock
     fake_lock
-    @worker = CFLightAPIWorker.new
+    @worker = CFLightAPIWorker.new(@fake_redis_server)
     cf_client_mocks
     api_mocks
   end

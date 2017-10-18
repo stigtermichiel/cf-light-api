@@ -1,6 +1,5 @@
 require 'cfoundry'
 require 'json'
-require 'rufus-scheduler'
 require 'redlock'
 require 'logger'
 require 'graphite-api'
@@ -14,7 +13,7 @@ class CFLightAPIWorker
     include NewRelic::Agent::MethodTracer
   end
 
-  def initialize()
+  def initialize(redis)
     @logger = Logger.new(STDOUT)
     @logger.formatter = proc do |severity, datetime, progname, msg|
       "#{datetime} [cf_light_api:worker]: #{msg}\n"
@@ -23,44 +22,27 @@ class CFLightAPIWorker
     check_cf_env
     check_graphite_env
 
-    update_interval = set_update_interval
-    update_timeout = set_update_timeout
-
-    @scheduler = Rufus::Scheduler.new
-    @redis = Redis.new(:uri => ENV['REDIS_URI'])
+    @redis = redis
     @lock_manager = Redlock::Client.new([@redis])
-
-    @scheduler.every update_interval, :first_in => '5s', :overlap => false, :timeout => update_timeout do
-      update_cf_data
-    end
-
   end
 
-  def set_update_timeout
-    update_timeout = (ENV['UPDATE_TIMEOUT'] || '5m').to_s
-    @logger.info "Update timeout:  '#{@update_timeout}'"
-    update_timeout
-  end
 
-  def set_update_interval
-    update_interval = (ENV['UPDATE_INTERVAL'] || '5m').to_s # If you change the default '5m' here, also remember to change the default age validity in sinatra/cf_light_api.rb:31
-    @logger.info "Update interval: '#{@update_interval}'"
-    update_interval
-  end
 
   def check_graphite_env
     # If either of the Graphite settings are set, verify that they are both set, or exit with an error. CF_ENV_NAME is used
-    # to prefix the Graphite key, to allow filtering by environment if you run more than one.    if ENV['GRAPHITE_HOST'] or ENV['GRAPHITE_PORT']
-    ['GRAPHITE_HOST', 'GRAPHITE_PORT', 'CF_ENV_NAME'].each do |env|
-      unless ENV[env]
-        @logger.info "Error: please set the '#{env}' environment variable to enable exporting to Graphite."
-        exit 1
+    # to prefix the Graphite key, to allow filtering by environment if you run more than one.
+    if ENV['GRAPHITE_HOST'] or ENV['GRAPHITE_PORT']
+      ['GRAPHITE_HOST', 'GRAPHITE_PORT', 'CF_ENV_NAME'].each do |env|
+        unless ENV[env]
+          @logger.info "Error: please set the '#{env}' environment variable to enable exporting to Graphite."
+          exit 1
+        end
       end
-    end
-    if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT']
-      @logger.info "Graphite server: #{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}"
-    else
-      @logger.info 'Graphite server: Disabled'
+      if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT']
+        @logger.info "Graphite server: #{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}"
+      else
+        @logger.info 'Graphite server: Disabled'
+      end
     end
   end
 
