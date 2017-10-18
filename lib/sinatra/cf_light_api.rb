@@ -9,6 +9,7 @@ module Sinatra
   module CfLightAPI
 
     def self.registered(app)
+
       app.get '/v1/apps/?:org?' do
         content_type :json
         all_apps = JSON.parse(REDIS.get("#{ENV['REDIS_KEY_PREFIX']}:apps"))
@@ -42,6 +43,7 @@ module Sinatra
         return updated_json
       end
     end
+
   end
 
   register CfLightAPI

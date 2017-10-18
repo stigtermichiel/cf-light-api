@@ -20,30 +20,13 @@ class CFLightAPIWorker
       "#{datetime} [cf_light_api:worker]: #{msg}\n"
     end
 
-    check_cf_env
-    check_graphite_env
-    update_interval, update_timeout = set_update_values
-
-    @scheduler = Rufus::Scheduler.new
-    @redis = Redis.new(:uri => ENV['REDIS_URI'])
-    @lock_manager = Redlock::Client.new([@redis])
-
-    @scheduler.every update_interval, :first_in => '5s', :overlap => false, :timeout => update_timeout do
-      update_cf_data
+    ['CF_API', 'CF_USER', 'CF_PASSWORD'].each do |env|
+      unless ENV[env]
+        @logger.info "Error: please set the '#{env}' environment variable."
+        exit 1
+      end
     end
 
-  end
-
-  def set_update_values
-    update_interval = (ENV['UPDATE_INTERVAL'] || '5m').to_s # If you change the default '5m' here, also remember to change the default age validity in sinatra/cf_light_api.rb:31
-    update_timeout = (ENV['UPDATE_TIMEOUT'] || '5m').to_s
-
-    @logger.info "Update interval: '#{@update_interval}'"
-    @logger.info "Update timeout:  '#{@update_timeout}'"
-    return update_interval, update_timeout
-  end
-
-  def check_graphite_env
     # If either of the Graphite settings are set, verify that they are both set, or exit with an error. CF_ENV_NAME is used
     # to prefix the Graphite key, to allow filtering by environment if you run more than one.
     if ENV['GRAPHITE_HOST'] or ENV['GRAPHITE_PORT']
@@ -54,20 +37,27 @@ class CFLightAPIWorker
         end
       end
     end
+
+    update_interval = (ENV['UPDATE_INTERVAL'] || '5m').to_s # If you change the default '5m' here, also remember to change the default age validity in sinatra/cf_light_api.rb:31
+    update_timeout = (ENV['UPDATE_TIMEOUT'] || '5m').to_s
+
+    @scheduler = Rufus::Scheduler.new
+    @redis = Redis.new(:uri => ENV['REDIS_URI'])
+    @lock_manager = Redlock::Client.new([@redis])
+
+    @logger.info "Update interval: '#{@update_interval}'"
+    @logger.info "Update timeout:  '#{@update_timeout}'"
+
     if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT']
       @logger.info "Graphite server: #{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}"
     else
       @logger.info 'Graphite server: Disabled'
     end
-  end
 
-  def check_cf_env
-    ['CF_API', 'CF_USER', 'CF_PASSWORD'].each do |env|
-      unless ENV[env]
-        @logger.info "Error: please set the '#{env}' environment variable."
-        exit 1
-      end
+    @scheduler.every update_interval, :first_in => '5s', :overlap => false, :timeout => update_timeout do
+      update_cf_data
     end
+
   end
 
   def formatted_instance_stats_for_app app

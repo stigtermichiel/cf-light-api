@@ -58,4 +58,6 @@ describe CFLightAPIWorker do
     allow(@worker).to receive(:get_client).and_return(@client)
     allow(@client).to receive(:logout).and_return("asf")
   end
+
+
 end
