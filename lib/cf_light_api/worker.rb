@@ -5,6 +5,7 @@ require 'logger'
 require 'graphite-api'
 require 'date'
 require 'redis'
+require_relative 'environment_checker'
 
 class CFLightAPIWorker
   if ENV['NEW_RELIC_LICENSE_KEY']
@@ -19,40 +20,10 @@ class CFLightAPIWorker
       "#{datetime} [cf_light_api:worker]: #{msg}\n"
     end
 
-    check_cf_env
-    check_graphite_env
+    EnvironmentChecker.new
 
     @redis = redis
     @lock_manager = Redlock::Client.new([@redis])
-  end
-
-
-
-  def check_graphite_env
-    # If either of the Graphite settings are set, verify that they are both set, or exit with an error. CF_ENV_NAME is used
-    # to prefix the Graphite key, to allow filtering by environment if you run more than one.
-    if ENV['GRAPHITE_HOST'] or ENV['GRAPHITE_PORT']
-      ['GRAPHITE_HOST', 'GRAPHITE_PORT', 'CF_ENV_NAME'].each do |env|
-        unless ENV[env]
-          @logger.info "Error: please set the '#{env}' environment variable to enable exporting to Graphite."
-          exit 1
-        end
-      end
-      if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT']
-        @logger.info "Graphite server: #{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}"
-      else
-        @logger.info 'Graphite server: Disabled'
-      end
-    end
-  end
-
-  def check_cf_env
-    ['CF_API', 'CF_USER', 'CF_PASSWORD'].each do |env|
-      unless ENV[env]
-        @logger.info "Error: please set the '#{env}' environment variable."
-        exit 1
-      end
-    end
   end
 
   def formatted_instance_stats_for_app app
