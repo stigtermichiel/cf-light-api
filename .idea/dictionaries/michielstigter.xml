@@ -3,9 +3,11 @@
     <words>
       <w>buildpack</w>
       <w>cflinuxfs</w>
+      <w>cfoundry</w>
       <w>getwd</w>
       <w>netmon</w>
       <w>orgs</w>
+      <w>redlock</w>
     </words>
   </dictionary>
 </component>

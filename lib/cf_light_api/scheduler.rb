@@ -6,7 +6,13 @@ class Scheduler
     @logger = logger
     @scheduler = Rufus::Scheduler.new
     @scheduler.every set_update_interval, :first_in => '5s', :overlap => false, :timeout => set_update_timeout do
+      begin
       proc.call
+      rescue Rufus::Scheduler::TimeoutError
+        @logger.info 'Data update took too long and was aborted, waiting for the lock to expire before trying again...'
+        @cf_client.logout
+      end
+
     end
   end
 
