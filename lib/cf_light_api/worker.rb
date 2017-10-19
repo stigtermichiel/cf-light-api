@@ -34,22 +34,22 @@ class CFLightAPIWorker
         start_time = Time.now
 
         @logger.info "Updating data..."
-        @cf_client = get_client # Ensure we have a fresh auth token...
+        cf_client = get_client # Ensure we have a fresh auth token...
 
-        apps = cf_rest('/v2/apps?results-per-page=100')
-        orgs = cf_rest('/v2/organizations?results-per-page=100')
-        quotas = cf_rest('/v2/quota_definitions?results-per-page=100')
-        spaces = cf_rest('/v2/spaces?results-per-page=100')
-        stacks = cf_rest('/v2/stacks?results-per-page=100')
-        domains = cf_rest('/v2/domains?results-per-page=100')
+        apps = cf_rest('/v2/apps?results-per-page=100', cf_client)
+        orgs = cf_rest('/v2/organizations?results-per-page=100', cf_client)
+        quotas = cf_rest('/v2/quota_definitions?results-per-page=100', cf_client)
+        spaces = cf_rest('/v2/spaces?results-per-page=100', cf_client)
+        stacks = cf_rest('/v2/stacks?results-per-page=100', cf_client)
+        domains = cf_rest('/v2/domains?results-per-page=100', cf_client)
 
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", OrgFormatter.new(orgs, quotas, @graphite).format_orgs
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains)
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains, cf_client)
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
 
         @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
         @lock_manager.unlock(lock)
-        @cf_client.logout
+        cf_client.logout
       else
         @logger.info "Update already running in another instance!"
       end
@@ -57,16 +57,16 @@ class CFLightAPIWorker
   end
 
   def formatted_instance_stats_for app
-    instances = cf_rest("/v2/apps/#{app['metadata']['guid']}/stats")[0]
+    instances = cf_rest("/v2/apps/#{app['metadata']['guid']}/stats", client)[0]
     raise "Unable to retrieve app instance stats: '#{instances['error_code']}'" if instances['error_code']
     instances.map {|key, value| value}
   end
 
-  def cf_rest(path, method='GET')
+  def cf_rest(path, client, method='GET')
     @logger.info "Making #{method} request for #{path}..."
 
     resources = []
-    response = json_response(path, method)
+    response = json_response(path, client, method)
 
     # Some endpoints return a 'resources' array, others are flat, depending on the path.
     if response['resources']
@@ -81,8 +81,8 @@ class CFLightAPIWorker
     resources.flatten
   end
 
-  def json_response(path, method='GET')
-    JSON.parse(@cf_client.base.rest_client.request(method, path)[1][:body])
+  def json_response(path, client, method='GET')
+    JSON.parse(client.base.rest_client.request(method, path)[1][:body])
   end
 
   def get_client(cf_api=ENV['CF_API'], cf_user=ENV['CF_USER'], cf_password=ENV['CF_PASSWORD'])
@@ -121,8 +121,8 @@ class CFLightAPIWorker
     format("%02d hrs, %02d mins, %02d secs", hours, minutes, seconds)
   end
 
-  def format_routes_for_app(app, domains)
-    routes = cf_rest app['entity']['routes_url']
+  def format_routes_for_app(app, domains, client)
+    routes = cf_rest(app['entity']['routes_url'], client)
     routes.collect do |route|
       host = route['entity']['host']
       path = route['entity']['path']
@@ -135,13 +135,13 @@ class CFLightAPIWorker
   end
 
 
-  def format_apps(apps, spaces, orgs, stacks, domains)
+  def format_apps(apps, spaces, orgs, stacks, domains, client)
     apps.map do |app|
       # TODO: This is a bit repetative, could maybe improve?
       space = spaces.find {|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
       org = orgs.find {|an_org| an_org['metadata']['guid'] == space['entity']['organization_guid']}
       stack = stacks.find {|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
-      routes = format_routes_for_app(app, domains)
+      routes = format_routes_for_app(app, domains, client)
 
       running = (app['entity']['state'] == "STARTED")
 

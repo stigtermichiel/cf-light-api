@@ -10,7 +10,7 @@ class Scheduler
       proc.call
       rescue Rufus::Scheduler::TimeoutError
         @logger.info 'Data update took too long and was aborted, waiting for the lock to expire before trying again...'
-        @cf_client.logout
+        # @cf_client.logout
       end
 
     end

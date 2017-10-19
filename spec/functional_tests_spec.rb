@@ -43,13 +43,13 @@ describe CFLightAPIWorker do
   end
 
   def api_mocks
-    allow(@worker).to receive(:json_response).with('/v2/apps?results-per-page=100', "GET").and_return(apps_response)
-    allow(@worker).to receive(:json_response).with('/v2/organizations?results-per-page=100', "GET").and_return(orgs_response)
-    allow(@worker).to receive(:json_response).with('/v2/quota_definitions?results-per-page=100', "GET").and_return(quotas_response)
-    allow(@worker).to receive(:json_response).with('/v2/spaces?results-per-page=100', "GET").and_return(spaces_response)
-    allow(@worker).to receive(:json_response).with('/v2/stacks?results-per-page=100', "GET").and_return(stacks_response)
-    allow(@worker).to receive(:json_response).with('/v2/domains?results-per-page=100', "GET").and_return(domains_response)
-    allow(@worker).to receive(:json_response).with('/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622/routes', "GET").and_return(app_routes_response)
+    allow(@worker).to receive(:json_response).with('/v2/apps?results-per-page=100', @client, "GET").and_return(apps_response)
+    allow(@worker).to receive(:json_response).with('/v2/organizations?results-per-page=100', @client, "GET").and_return(orgs_response)
+    allow(@worker).to receive(:json_response).with('/v2/quota_definitions?results-per-page=100', @client, "GET").and_return(quotas_response)
+    allow(@worker).to receive(:json_response).with('/v2/spaces?results-per-page=100', @client, "GET").and_return(spaces_response)
+    allow(@worker).to receive(:json_response).with('/v2/stacks?results-per-page=100', @client, "GET").and_return(stacks_response)
+    allow(@worker).to receive(:json_response).with('/v2/domains?results-per-page=100', @client, "GET").and_return(domains_response)
+    allow(@worker).to receive(:json_response).with('/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622/routes', @client, "GET").and_return(app_routes_response)
   end
 
   def cf_client_mocks
