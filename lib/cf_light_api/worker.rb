@@ -6,6 +6,7 @@ require 'graphite-api'
 require 'date'
 require 'redis'
 require_relative 'environment_checker'
+require_relative 'org_formatter'
 
 class CFLightAPIWorker
   if ENV['NEW_RELIC_LICENSE_KEY']
@@ -28,9 +29,6 @@ class CFLightAPIWorker
   end
 
   def update_cf_data
-    @cf_client = nil
-
-    begin
       lock = @lock_manager.lock("#{ENV['REDIS_KEY_PREFIX']}:lock", 5*60*1000)
       if lock
         start_time = Time.now
@@ -45,7 +43,7 @@ class CFLightAPIWorker
         stacks = cf_rest('/v2/stacks?results-per-page=100')
         domains = cf_rest('/v2/domains?results-per-page=100')
 
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", format_orgs(orgs, quotas)
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", OrgFormatter.new(orgs, quotas, @graphite).format_orgs
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains)
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
 
@@ -56,13 +54,9 @@ class CFLightAPIWorker
         @logger.info "Update already running in another instance!"
       end
 
-    rescue Rufus::Scheduler::TimeoutError
-      @logger.info 'Data update took too long and was aborted, waiting for the lock to expire before trying again...'
-      @cf_client.logout
-    end
   end
 
-  def formatted_instance_stats_for_app app
+  def formatted_instance_stats_for app
     instances = cf_rest("/v2/apps/#{app['metadata']['guid']}/stats")[0]
     raise "Unable to retrieve app instance stats: '#{instances['error_code']}'" if instances['error_code']
     instances.map {|key, value| value}
@@ -113,15 +107,6 @@ class CFLightAPIWorker
       ['mem', 'disk', 'cpu'].each do |key|
         @graphite.metrics "#{graphite_base_key}.#{key}" => instance_data['stats']['usage'][key]
       end
-    end
-  end
-
-  def send_org_quota_data_to_graphite(org_name, quota)
-    graphite_base_key = "cf_orgs.#{ENV['CF_ENV_NAME']}.#{org_name}"
-    @logger.info "  Exporting org quota statistics to Graphite, path '#{graphite_base_key}'"
-
-    quota.keys.each do |key|
-      @graphite.metrics "#{graphite_base_key}.quota.#{key}" => quota[key]
     end
   end
 
@@ -182,7 +167,7 @@ class CFLightAPIWorker
       begin
         instance_stats = []
         if running
-          instance_stats = formatted_instance_stats_for_app(app)
+          instance_stats = formatted_instance_stats_for(app)
           running_instances = instance_stats.select {|instance| instance['stats']['uris'] if instance['state'] == 'RUNNING'}
           raise "There are no running instances of this app." if running_instances.empty?
 
@@ -212,27 +197,6 @@ class CFLightAPIWorker
       base_data.merge additional_data
     end
   end
-
-  def format_orgs(orgs, quotas)
-    orgs.map do |org|
-      quota = quotas.find {|a_quota| a_quota['metadata']['guid'] == org['entity']['quota_definition_guid']}
-
-      quota = {
-          :total_services => quota['entity']['total_services'],
-          :total_routes => quota['entity']['total_routes'],
-          :memory_limit => quota['entity']['memory_limit'] * 1024 * 1024
-      }
-
-      send_org_quota_data_to_graphite(org['entity']['name'], quota) if @graphite
-
-      {
-          :guid => org['metadata']['guid'],
-          :name => org['entity']['name'],
-          :quota => quota
-      }
-    end
-  end
-
 
   if ENV['NEW_RELIC_LICENSE_KEY']
     add_transaction_tracer :update_cf_data, category: :task
