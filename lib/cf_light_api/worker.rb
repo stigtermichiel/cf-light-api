@@ -7,6 +7,7 @@ require 'date'
 require 'redis'
 require_relative 'environment_checker'
 require_relative 'org_formatter'
+require_relative 'apps_formatter'
 
 class CFLightAPIWorker
   if ENV['NEW_RELIC_LICENSE_KEY']
@@ -20,9 +21,7 @@ class CFLightAPIWorker
     @logger.formatter = proc do |severity, datetime, progname, msg|
       "#{datetime} [cf_light_api:worker]: #{msg}\n"
     end
-
     EnvironmentChecker.new
-
     @redis = redis
     @lock_manager = Redlock::Client.new([@redis])
     @graphite = GraphiteAPI.new(graphite: "#{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}") if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT'] and ENV['CF_ENV_NAME']
@@ -44,7 +43,7 @@ class CFLightAPIWorker
         domains = cf_rest('/v2/domains?results-per-page=100', cf_client)
 
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", OrgFormatter.new(orgs, quotas, @graphite).format_orgs
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", format_apps(apps, spaces, orgs, stacks, domains, cf_client)
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", AppsFormatter.new(apps, spaces, orgs, stacks, domains, cf_client, @logger).format_apps
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
 
         @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
@@ -54,12 +53,6 @@ class CFLightAPIWorker
         @logger.info "Update already running in another instance!"
       end
 
-  end
-
-  def formatted_instance_stats_for app
-    instances = cf_rest("/v2/apps/#{app['metadata']['guid']}/stats", client)[0]
-    raise "Unable to retrieve app instance stats: '#{instances['error_code']}'" if instances['error_code']
-    instances.map {|key, value| value}
   end
 
   def cf_rest(path, client, method='GET')
@@ -119,83 +112,6 @@ class CFLightAPIWorker
     minutes = (elapsed_seconds / 60) % 60
     hours = elapsed_seconds / (60 * 60)
     format("%02d hrs, %02d mins, %02d secs", hours, minutes, seconds)
-  end
-
-  def format_routes_for_app(app, domains, client)
-    routes = cf_rest(app['entity']['routes_url'], client)
-    routes.collect do |route|
-      host = route['entity']['host']
-      path = route['entity']['path']
-
-      domain = domains.find {|a_domain| a_domain['metadata']['guid'] == route['entity']['domain_guid']}
-      domain = domain['entity']['name']
-
-      "#{host}.#{domain}#{path}"
-    end
-  end
-
-
-  def format_apps(apps, spaces, orgs, stacks, domains, client)
-    apps.map do |app|
-      # TODO: This is a bit repetative, could maybe improve?
-      space = spaces.find {|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
-      org = orgs.find {|an_org| an_org['metadata']['guid'] == space['entity']['organization_guid']}
-      stack = stacks.find {|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
-      routes = format_routes_for_app(app, domains, client)
-
-      running = (app['entity']['state'] == "STARTED")
-
-      base_data = {
-          :buildpack => app['entity']['buildpack'],
-          :data_from => Time.now.to_i,
-          :diego => app['entity']['diego'],
-          :docker => app['entity']['docker_image'] ? true : false,
-          :docker_image => app['entity']['docker_image'],
-          :guid => app['metadata']['guid'],
-          :last_uploaded => app['metadata']['updated_at'] ? DateTime.parse(app['metadata']['updated_at']).strftime('%Y-%m-%d %T %z') : nil,
-          :name => app['entity']['name'],
-          :org => org['entity']['name'],
-          :routes => routes,
-          :space => space['entity']['name'],
-          :stack => stack['entity']['name'],
-          :state => app['entity']['state']
-      }
-
-      # Add additional data, such as instance usage statistics - but this is only possible if the instances are running.
-      additional_data = {}
-
-      begin
-        instance_stats = []
-        if running
-          instance_stats = formatted_instance_stats_for(app)
-          running_instances = instance_stats.select {|instance| instance['stats']['uris'] if instance['state'] == 'RUNNING'}
-          raise "There are no running instances of this app." if running_instances.empty?
-
-          if @graphite
-            send_instance_usage_data_to_graphite(instance_stats, org['entity']['name'], space['entity']['name'], app['entity']['name'])
-          end
-        end
-
-        additional_data = {
-            :running => running,
-            :instances => instance_stats,
-            :error => nil
-        }
-
-      rescue => e
-        # Most exceptions here will be caused by the app or one of the instances being in a non-standard state,
-        # for example, trying to query an app which was present when the worker began updating, but was stopped
-        # before we reached this section, so we just catch all exceptions, log the reason and move on.
-        @logger.info "  #{org['entity']['name']} #{space['entity']['name']}: '#{app['entity']['name']}' error: #{e.message}"
-        additional_data = {
-            :running => 'error',
-            :instances => [],
-            :error => e.message
-        }
-      end
-
-      base_data.merge additional_data
-    end
   end
 
   if ENV['NEW_RELIC_LICENSE_KEY']
