@@ -1,12 +1,12 @@
 class AppsFormatter
-  def initialize(apps, spaces, orgs, stacks, domains, client, logger)
+  def initialize(apps, spaces, orgs, stacks, domains, logger, cf_service)
     @apps = apps
     @spaces = spaces
     @orgs = orgs
     @stacks = stacks
     @domains = domains
-    @client = client
     @logger = logger
+    @cf_service = cf_service
   end
 
   def format_apps
@@ -72,8 +72,27 @@ class AppsFormatter
     end
   end
 
+  def send_instance_usage_data_to_graphite(instance_stats, org, space, app_name)
+    sanitised_app_name = app_name.gsub ".", "_" # Some apps have dots in the app name which breaks the Graphite key path
+
+    instance_stats.each_with_index do |instance_data, index|
+      graphite_base_key = "cf_apps.#{ENV['CF_ENV_NAME']}.#{org}.#{space}.#{sanitised_app_name}.#{index}"
+      @logger.info "  Exporting app instance \##{index} usage statistics to Graphite, path '#{graphite_base_key}'"
+
+      # Quota data
+      ['mem_quota', 'disk_quota'].each do |key|
+        @graphite.metrics "#{graphite_base_key}.#{key}" => instance_data['stats'][key]
+      end
+
+      # Usage data
+      ['mem', 'disk', 'cpu'].each do |key|
+        @graphite.metrics "#{graphite_base_key}.#{key}" => instance_data['stats']['usage'][key]
+      end
+    end
+  end
+
   def format_routes_for_app(app)
-    routes = cf_rest(app['entity']['routes_url'], @client)
+    routes = @cf_service.get_data_for(app['entity']['routes_url'])
     routes.collect do |route|
       host = route['entity']['host']
       path = route['entity']['path']
@@ -86,32 +105,8 @@ class AppsFormatter
   end
 
   def formatted_instance_stats_for(app)
-    instances = cf_rest("/v2/apps/#{app['metadata']['guid']}/stats", @client)[0]
+    instances = @cf_service.get_data_for("/v2/apps/#{app['metadata']['guid']}/stats")[0]
     raise "Unable to retrieve app instance stats: '#{instances['error_code']}'" if instances['error_code']
     instances.map {|_, value| value}
   end
-
-  def cf_rest(path, client, method='GET')
-    @logger.info "Making #{method} request for #{path}..."
-
-    resources = []
-    response = json_response(path, client, method)
-
-    # Some endpoints return a 'resources' array, others are flat, depending on the path.
-    if response['resources']
-      resources << response['resources']
-    else
-      resources << response
-    end
-
-    # Handle the pagination by recursing over myself until we get a response which doesn't contain a 'next_url'
-    # at which point all the resources are returned up the stack and flattened.
-    resources << cf_rest(response['next_url'], method) unless response['next_url'] == nil
-    resources.flatten
-  end
-
-  def json_response(path, client, method='GET')
-    JSON.parse(client.base.rest_client.request(method, path)[1][:body])
-  end
-
 end

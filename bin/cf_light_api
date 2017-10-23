@@ -18,8 +18,23 @@ require_relative '../lib/cf_light_api/worker.rb'
 require_relative '../lib/cf_light_api/scheduler.rb'
 require 'redis'
 
-worker = CFLightAPIWorker.new(Redis.new(:uri => ENV['REDIS_URI']))
-Scheduler.new(Proc.new {worker.update_cf_data}, Logger.new(STDOUT))
+environment_checker = EnvironmentChecker.new
+environment_checker.check_cf_env
+graphite = environment_checker.check_graphite_env
+environment_checker.check_redis_env
+
+logger = Logger.new(STDOUT)
+logger.formatter = proc do |_, datetime, progname, msg|
+  "#{datetime} [cf_light_api:worker]: #{msg}\n"
+end
+
+redis = Redis.new(:uri => ENV['REDIS_URI'])
+worker = CFLightAPIWorker.new(redis, graphite, Redlock::Client.new([redis]), logger)
+
+
+Scheduler.new(Proc.new do |client|
+  worker.update_cf_data(client)
+end, Logger.new(STDOUT))
 
 
 require 'sinatra'

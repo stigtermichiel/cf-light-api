@@ -1,11 +1,5 @@
 class EnvironmentChecker
 
-  def initialize
-    check_graphite_env
-    check_cf_env
-    check_redis_env
-  end
-
   def check_graphite_env
     # If either of the Graphite settings are set, verify that they are both set, or exit with an error. CF_ENV_NAME is used
     # to prefix the Graphite key, to allow filtering by environment if you run more than one.
@@ -18,10 +12,12 @@ class EnvironmentChecker
       end
       if ENV['GRAPHITE_HOST'] and ENV['GRAPHITE_PORT']
         @logger.info "Graphite server: #{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}"
+        GraphiteAPI.new(graphite: "#{ENV['GRAPHITE_HOST']}:#{ENV['GRAPHITE_PORT']}")
       else
         @logger.info 'Graphite server: Disabled'
       end
     end
+
   end
 
   def check_cf_env
