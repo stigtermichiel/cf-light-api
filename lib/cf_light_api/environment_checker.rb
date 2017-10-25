@@ -1,5 +1,9 @@
 class EnvironmentChecker
 
+  def initialize(logger)
+    @logger = logger
+  end
+
   def check_graphite_env
     # If either of the Graphite settings are set, verify that they are both set, or exit with an error. CF_ENV_NAME is used
     # to prefix the Graphite key, to allow filtering by environment if you run more than one.
@@ -35,6 +39,18 @@ class EnvironmentChecker
     end
 
     puts "[cf_light_api] Using Redis at '#{ENV['REDIS_URI']}' with key '#{ENV['REDIS_KEY_PREFIX']}'"
+  end
+
+  def check_new_relic_env
+    # If either of the minimum required New Relic settings are present, verify that they are both set, or exit with an error.
+    if ENV['NEW_RELIC_APP_NAME'] or ENV['NEW_RELIC_LICENSE_KEY']
+      ['NEW_RELIC_APP_NAME', 'NEW_RELIC_LICENSE_KEY'].each do |env|
+        unless ENV[env]
+          puts "[cf_light_api] Error: please set the '#{env}' environment variable to enable New Relic integration."
+          exit 1
+        end
+      end
+    end
   end
 
 end

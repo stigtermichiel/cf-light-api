@@ -30,7 +30,7 @@ class CFLightAPIWorker
       if lock
         start_time = Time.now
 
-        @logger.info "Updating data..."
+        @logger.info 'Updating data...'
         cf_service = CfService.new(client, @logger)
 
         apps = cf_service.get_data_for('/v2/apps?results-per-page=100')
@@ -40,15 +40,15 @@ class CFLightAPIWorker
         stacks = cf_service.get_data_for('/v2/stacks?results-per-page=100')
         domains = cf_service.get_data_for('/v2/domains?results-per-page=100')
 
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", OrgFormatter.new(orgs, quotas, @graphite).format_orgs
-        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", AppsFormatter.new(apps, spaces, orgs, stacks, domains, @logger, cf_service).format_apps
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:orgs", OrgFormatter.new(orgs, quotas, @graphite, @logger).format
+        put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:apps", AppsFormatter.new(apps, spaces, orgs, stacks, domains, @logger, cf_service, @graphite).format
         put_in_redis "#{ENV['REDIS_KEY_PREFIX']}:last_updated", {:last_updated => Time.now}
 
         @logger.info "Update completed in #{format_duration(Time.now.to_f - start_time.to_f)}..."
         @lock_manager.unlock(lock)
         client.logout
       else
-        @logger.info "Update already running in another instance!"
+        @logger.info 'Update already running in another instance!'
       end
     rescue StandardError => e
       @logger.info "Unknown exception happened, #{e}"
@@ -64,7 +64,7 @@ class CFLightAPIWorker
     seconds = elapsed_seconds % 60
     minutes = (elapsed_seconds / 60) % 60
     hours = elapsed_seconds / (60 * 60)
-    format("%02d hrs, %02d mins, %02d secs", hours, minutes, seconds)
+    format('%02d hrs, %02d mins, %02d secs', hours, minutes, seconds)
   end
 
   if ENV['NEW_RELIC_LICENSE_KEY']

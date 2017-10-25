@@ -1,5 +1,5 @@
 class AppsFormatter
-  def initialize(apps, spaces, orgs, stacks, domains, logger, cf_service)
+  def initialize(apps, spaces, orgs, stacks, domains, logger, cf_service, graphite)
     @apps = apps
     @spaces = spaces
     @orgs = orgs
@@ -7,15 +7,16 @@ class AppsFormatter
     @domains = domains
     @logger = logger
     @cf_service = cf_service
+    @graphite = graphite
   end
 
-  def format_apps
+  def format
     @apps.map do |app|
       # TODO: This is a bit repetative, could maybe improve?
       space = @spaces.find {|a_space| a_space['metadata']['guid'] == app['entity']['space_guid']}
       org = @orgs.find {|an_org| an_org['metadata']['guid'] == space['entity']['organization_guid']}
       stack = @stacks.find {|a_stack| a_stack['metadata']['guid'] == app['entity']['stack_guid']}
-      routes = format_routes_for_app(app)
+      routes = format_routes_for(app)
 
       running = (app['entity']['state'] == "STARTED")
 
@@ -91,7 +92,7 @@ class AppsFormatter
     end
   end
 
-  def format_routes_for_app(app)
+  def format_routes_for(app)
     routes = @cf_service.get_data_for(app['entity']['routes_url'])
     routes.collect do |route|
       host = route['entity']['host']

@@ -1,12 +1,13 @@
 class OrgFormatter
 
-  def initialize(orgs, quotas, graphite)
+  def initialize(orgs, quotas, graphite, logger)
     @orgs = orgs
     @quotas = quotas
     @graphite = graphite
+    @logger = logger
   end
 
-  def format_orgs
+  def format
     @orgs.map do |org|
       quota = @quotas.find {|a_quota| a_quota['metadata']['guid'] == org['entity']['quota_definition_guid']}
 
