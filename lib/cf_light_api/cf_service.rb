@@ -33,5 +33,4 @@ class CfService
     client.login({:username => cf_user, :password => cf_password})
     client
   end
-
 end
