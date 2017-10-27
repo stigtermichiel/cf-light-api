@@ -22,11 +22,7 @@ worker = CFLightAPIWorker.new(redis, @graphite, Redlock::Client.new([redis]), lo
 
 Scheduler.new(Proc.new {|client| worker.update_cf_data(client)}, Logger.new(STDOUT))
 
-require 'sinatra'
-require 'sinatra/cf_light_api'
+require_relative '../lib/sinatra/cf_light_api'
 
-set :traps, false
-set :run, true
-
-
+CfLightAPI.run!
 
