@@ -4,6 +4,7 @@ require 'mock_redis'
 require 'redis'
 require 'json'
 
+
 describe CfService do
 
   let(:apps_response) {JSON.parse(IO.read(File.join(Dir.getwd, '/spec/api_mock_responses/apps.json')))}
@@ -12,10 +13,12 @@ describe CfService do
   let(:client) {double('client')}
   let(:cf_service) {CfService.new(client, Logger.new(STDOUT))}
 
+
   it 'Collects data from cf for a response without pagination' do
+    expected = exp
     allow(cf_service).to receive(:json_response).with('/v2/apps?results-per-page=100', 'GET').and_return(apps_response)
     app_data = cf_service.get_data_for('/v2/apps?results-per-page=100', 'GET')
-    expect(app_data.to_json).to eq(exp)
+    expect(app_data.to_json.to_s).to eq(expected.to_s)
   end
 
   it 'Collects data from cf for a response with pagination' do
