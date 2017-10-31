@@ -24,5 +24,6 @@ Scheduler.new(Proc.new {|client| worker.update_cf_data(client)}, Logger.new(STDO
 
 require_relative '../lib/sinatra/cf_light_api'
 
+CfLightAPI.set :redis, redis
 CfLightAPI.run!
 
