@@ -28,4 +28,49 @@ class TestData
     [{"metadata" => {"guid" => "a3ae744d-97ba-4939-a2a1-8f195f284a8f", "url" => "/v2/routes/a3ae744d-97ba-4939-a2a1-8f195f284a8f", "created_at" => "2016-08-18T13:43:44Z", "updated_at" => nil}, "entity" => {"host" => "de-netmon-es", "path" => "", "domain_guid" => "domain_guid", "space_guid" => "b113f179-7952-46c6-bf52-65dd3a480d1a", "service_instance_guid" => nil, "port" => nil, "domain_url" => "/v2/shared_domains/1b245fdd-8199-47cb-8416-222e214ca559", "space_url" => "/v2/spaces/b113f179-7952-46c6-bf52-65dd3a480d1a", "apps_url" => "/v2/routes/a3ae744d-97ba-4939-a2a1-8f195f284a8f/apps", "route_mappings_url" => "/v2/routes/a3ae744d-97ba-4939-a2a1-8f195f284a8f/route_mappings"}}]
   end
 
+  def self.app_data
+    [{:metadata =>
+          {:guid => 'app-guid',
+           :url => '/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622',
+           :created_at => '2016-06-08T16:41:45Z',
+           :updated_at => '2016-06-08T16:41:45Z'},
+      :entity =>
+          {:name => 'name-2443',
+           :production => false,
+           :space_guid => 'space_guid',
+           :stack_guid => 'stack_guid',
+           :buildpack => nil,
+           :detected_buildpack => nil,
+           :detected_buildpack_guid => nil,
+           :environment_json => nil,
+           :memory => 1024,
+           :instances => 1,
+           :disk_quota => 1024,
+           :state => 'STOPPED',
+           :version => 'f5696e0f-087d-49b0-9ad7-4756c49a6ba6',
+           :command => nil,
+           :console => false,
+           :debug => nil,
+           :staging_task_id => nil,
+           :package_state => 'PENDING',
+           :health_check_type => 'port',
+           :health_check_timeout => nil,
+           :staging_failed_reason => nil,
+           :staging_failed_description => nil,
+           :diego => false,
+           :docker_image => nil,
+           :package_updated_at => '2016-06-08T16:41:45Z',
+           :detected_start_command => '',
+           :enable_ssh => true,
+           :docker_credentials_json =>
+               {:redacted_message => '[PRIVATE DATA HIDDEN]'},
+           :ports => nil,
+           :space_url => '/v2/spaces/9c5c8a91-a728-4608-9f5e-6c8026c3a2ac',
+           :stack_url => '/v2/stacks/f6c960cc-98ba-4fd1-b197-ecbf39108aa2',
+           :routes_url => '/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622/routes',
+           :events_url => '/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622/events',
+           :service_bindings_url => '/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622/service_bindings',
+           :route_mappings_url => '/v2/apps/6064d98a-95e6-400b-bc03-be65e6d59622/route_mappings'}}].to_json
+  end
+
 end
