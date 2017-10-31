@@ -19,6 +19,7 @@
 # See http://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
 require 'dotenv'
 require 'rack/test'
+require 'rspec'
 Dotenv.load('.testenv')
 
 RSpec.configure do |config|
