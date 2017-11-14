@@ -1,0 +1,69 @@
+{
+  "guid": "app-guid",
+  "name": "name-2443",
+  "routes": [
+    {
+      "guid": "2b539fff-fb36-4a18-b533-6a0a31f724e3",
+      "host": "host",
+      "port": null,
+      "path": "",
+      "domain": {
+        "guid": "domain_guid",
+        "name": "domain.io"
+      }
+    }
+  ],
+  "running_instances": 1,
+  "services": [],
+  "available_domains": [
+    {
+      "guid": "test.cf.com",
+      "name": "domain1",
+      "router_group_guid": null,
+      "router_group_type": null
+    },
+    {
+      "guid": "1823de73-d8d2-4542-a129-07ef915f03df",
+      "name": "domain2",
+      "router_group_guid": null,
+      "router_group_type": null
+    },
+    {
+      "guid": "7faf754e-8835-41ba-818c-ef8c7e32957a",
+      "name": "domain3",
+      "router_group_guid": null,
+      "router_group_type": null
+    }
+  ],
+  "production": false,
+  "space_guid": "space_guid",
+  "stack_guid": "stack_guid",
+  "buildpack": "ruby_buildpack",
+  "detected_buildpack": "",
+  "detected_buildpack_guid": "e8c9c38d-596f-4659-8289-eed401851dbd",
+  "environment_json": {},
+  "memory": 256,
+  "instances": 1,
+  "disk_quota": 1024,
+  "state": "STARTED",
+  "version": "89316cfd-a7bd-4c63-bfee-cbdb00eee403",
+  "command": null,
+  "console": false,
+  "debug": null,
+  "staging_task_id": "d3d1f7c7-b15f-4908-b576-ed788290869e",
+  "package_state": "STAGED",
+  "health_check_type": "port",
+  "health_check_timeout": null,
+  "health_check_http_endpoint": null,
+  "staging_failed_reason": null,
+  "staging_failed_description": null,
+  "diego": true,
+  "docker_image": null,
+  "package_updated_at": "2017-06-01T21:24:40Z",
+  "detected_start_command": "bundle exec rackup config.ru -p $PORT",
+  "enable_ssh": true,
+  "docker_credentials_json": {
+    "redacted_message": "[PRIVATE DATA HIDDEN]"
+  },
+  "ports": null
+}
